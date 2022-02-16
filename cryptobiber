@@ -1,0 +1,103 @@
+#!/usr/bin/env python3
+
+# idea and initial implementation based on https://github.com/thomwiggers/extract_from_bibliography/
+
+import re
+import logging
+import xml.etree.ElementTree as ET
+from pathlib import PurePath
+import subprocess
+
+
+NAMESPACES = {'bcf': "https://sourceforge.net/projects/biblatex"}
+
+
+def get_keys(xml_tree):
+    root = xml_tree.getroot()
+    return {item.text for item in root.findall('.//bcf:citekey', NAMESPACES)}
+
+def get_datasources(xml_tree):
+    root = xml_tree.getroot()
+    return {item for item in root.findall('.//bcf:datasource', NAMESPACES)}
+
+def get_bibfiles(xml_tree):
+    root = xml_tree.getroot()
+    return {item.text for item in root.findall('.//bcf:datasource', NAMESPACES)}
+
+def build_regex(keys):
+    regex = re.compile(
+        r"""
+        ^@ \w+ \{ (%s),$\n          # KEY
+          .*?                    # BODY
+        ^\}$""" % '|'.join(keys),
+        re.MULTILINE | re.VERBOSE | re.DOTALL)
+    return regex
+
+
+def filter_bib_data(bib_data, regex):
+    for match in regex.finditer(bib_data):
+        string = match.group(0)
+        logging.info("Found %s", string.split('\n')[0])
+        yield string
+
+
+def main(bcf_file_name, aux_dir):
+    source_bcf_path = PurePath(bcf_file_name).with_suffix('.bcf')
+    print(f"[cryptobiber] reading bcf file '{source_bcf_path}'")
+    try:
+        with open(bcf_file_name, 'r') as f:
+            bcf_xml_tree = ET.parse(f)
+    except FileNotFoundError as e:
+        print(f"Could not open file '{bcf_file}': {str(e)}")
+        exit(1)
+    except ET.ParseError as e:
+        print(f"Could not parse file '{bcf_file}': {str(e)}")
+        exit(1)
+    keys = get_keys(bcf_xml_tree)
+    regex = build_regex(keys)
+
+    clean_bcf_path = PurePath(aux_dir) / f'cryptobiber_{bcf_file_name}'
+    for source in get_datasources(bcf_xml_tree):
+        if source.get('type') != 'file' or source.get('datatype') != 'bibtex':
+            continue
+        source_bib_path = PurePath(source.text)
+        if source_bib_path.name != 'crypto.bib':
+            continue
+        print(f"[cryptobiber] found cryptobib source '{source_bib_path}'")
+        clean_bib_path = PurePath(aux_dir) / 'cryptobiber_crypto.bib'
+        source.text = str(clean_bib_path)
+        with open(source_bib_path, 'r') as source_bib_file:
+            # TODO: avoid loading the whole file to memory
+            source_data = source_bib_file.read()
+        print(f"[cryptobiber] write filtered cryptobib source to: '{source_bib_path}'")
+        with open(clean_bib_path, 'w') as clean_bib_file:
+            for entry in filter_bib_data(source_data, regex):
+                clean_bib_file.write(entry + '\n')
+
+    # write update bcf file
+    print(f"[cryptobiber] write updated bcf file to: '{clean_bcf_path}'")
+    with open(clean_bcf_path, 'w') as clean_bcf_file:
+        bcf_xml_tree.write(clean_bcf_file, encoding='unicode')
+
+    # call original biber on new bcf file
+    destination_bbl_path = source_bcf_path.with_suffix('.bbl')
+    destination_blg_path = source_bcf_path.with_suffix('.blg')
+    print(f"[cryptobiber] call biber on updated bcf file to produce: '{destination_bbl_path}'")
+    subprocess.run([
+            'biber',
+            '--output-file', destination_bbl_path,
+            '--logfile', destination_blg_path,
+            clean_bcf_path,
+            aux_dir,
+        ], check=True)
+
+
+
+if __name__ == "__main__":
+    import sys
+    if len(sys.argv) < 3:
+        print(f'Usage: {sys.argv[0]} <bcf-file> <aux-dir>', file=sys.stderr)
+        sys.exit(1)
+    bcf_file = sys.argv[1]
+    aux_dir = sys.argv[2]
+    main(bcf_file, aux_dir)
