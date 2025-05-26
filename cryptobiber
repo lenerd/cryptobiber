@@ -69,7 +69,7 @@ def main(bcf_file_name, aux_dir):
         with open(source_bib_path, 'r') as source_bib_file:
             # TODO: avoid loading the whole file to memory
             source_data = source_bib_file.read()
-        print(f"[cryptobiber] write filtered cryptobib source to: '{source_bib_path}'")
+        print(f"[cryptobiber] write filtered cryptobib source to: '{clean_bib_path}'")
         with open(clean_bib_path, 'w') as clean_bib_file:
             for entry in filter_bib_data(source_data, regex):
                 clean_bib_file.write(entry + '\n')
