@@ -29,7 +29,7 @@ def build_regex(keys):
         r"""
         ^@ \w+ \{ (%s),$\n          # KEY
           .*?                    # BODY
-        ^\}$""" % '|'.join(keys),
+        ^\}$""" % '|'.join(map(re.escape, keys)),
         re.MULTILINE | re.VERBOSE | re.DOTALL)
     return regex
 
