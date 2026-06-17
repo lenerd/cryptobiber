@@ -56,7 +56,7 @@ def main(bcf_file_name, aux_dir):
     keys = get_keys(bcf_xml_tree)
     regex = build_regex(keys)
 
-    clean_bcf_path = PurePath(aux_dir) / f'cryptobiber_{bcf_file_name}'
+    clean_bcf_path = PurePath(aux_dir) / f'cryptobiber_{source_bcf_path.name}'
     for source in get_datasources(bcf_xml_tree):
         if source.get('type') != 'file' or source.get('datatype') != 'bibtex':
             continue
